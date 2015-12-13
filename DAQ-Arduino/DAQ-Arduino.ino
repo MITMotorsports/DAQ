@@ -19,7 +19,7 @@
  *  GPS
  *   - 
  *   - 
- *   - 
+ *   - ;
  *   - 
  *   - 
  *   
@@ -49,9 +49,9 @@ SimpleTimer timer;
 void setup(){
   Serial.begin(9600);
   //setupRTC();
-  setupSDC();
+  //setupSDC();
   setupTEM();
-  setupGPS();
+  //setupGPS();
 }
 
 void loop(){
@@ -61,15 +61,15 @@ void loop(){
 unsigned long s;
 unsigned long start;
 bool log(String key, String val){
-  s = millis()/1000 + start;
-  Serial.println(val);
-  String d = key + ',' + s + ',' + val;
-  //Serial.println(d);
-  writeSDC(d);
+  s = millis();
+  String d = String(s) + ',' + key + ',' + val;
+  Serial.println(d);
+  //writeSDC(d);
   return true;
 }
 
 // GPS //////////////////////////////////////////////////////////////////
+/*
 #include <SoftwareSerial.h>
 SoftwareSerial gpsSerial(10, 11); // RX, TX (TX not used)
 const int sentenceSize = 80;
@@ -138,13 +138,13 @@ void getField(char* buffer, int index)
   }
   buffer[fieldPos] = '\0';
 }
+*/
 
-/*
 // IMU //////////////////////////////////////////////////////////////////
 // The SFE_LSM9DS1 library requires both Wire and SPI be
 // included BEFORE including the 9DS1 library.
 #include <Wire.h>
-#include <SPI.h>
+#include <SPI.h>/*
 #include "SparkFunLSM9DS1.h"
 
 //////////////////////////
@@ -344,7 +344,7 @@ float ax, float ay, float az, float mx, float my, float mz)
 */
 
 // RTC //////////////////////////////////////////////////////////////////
-#include <Wire.h>
+
 /*
 // Date and time functions using a DS1307 RTC connected via I2C and Wire lib
 #include <Wire.h>
@@ -380,7 +380,7 @@ void setupRTC() {
   }
 }
 */
-
+/*
 // EEPROM workaround
 
 #include <EEPROM.h>
@@ -410,12 +410,6 @@ EEPROM.write(EEPROMADDR, filenum);
     log("err", "Card failed, or not present");
   }
                                  
-  /*dataFile = SD.open(String(starttime.year()) + '.' + 
-                                 starttime.month() + '.' + 
-                                 starttime.day() + ' ' + 
-                                 starttime.hour() + '.' + 
-                                 starttime.minute() + '.' + 
-                                 starttime.second() + ".csv", FILE_WRITE);*/
   dataFile = SD.open(filename, FILE_WRITE);
   Serial.println("Output to " + filename);
 }
@@ -434,8 +428,8 @@ void writeSDC(String str)
   }
 }
 
-
-// SDC //////////////////////////////////////////////////////////////////
+*/
+// TEM //////////////////////////////////////////////////////////////////
 #include "OneWire.h"
 #include "DallasTemperature.h"
 
@@ -449,21 +443,26 @@ OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 
 DeviceAddress addrs[8];
+
+DeviceAddress T1 = {0x28, 0x1F, 0x58, 0x29, 0x07, 0x00, 0x00, 0x53};
  
 // Records all temperatures. The function takes about 835 milliseconds to run.
 void updateTEM(){
   sensors.requestTemperatures();
   String dataString;
+  log("tem",String(sensors.getTempC(T1)));
+  /*
   for(int i = 0; i < sensors.getDeviceCount(); i++){
     dataString += sensors.getTempC(addrs[i]) + ',';
   }
-  log("tem", dataString);
+  log("tem", dataString);*/
 }
 
 void setupTEM() {  
 
   // Start up the library
   sensors.begin();
+  /*
   int numDevices = sensors.getDeviceCount();
   log("nfo",String("found ") + numDevices + " temperature sensors");
   int i = 0;
@@ -472,7 +471,7 @@ void setupTEM() {
     memcpy(addrs[i], addr, 1);
     sensors.setResolution(addr, 12);
     i++;
-  }
+  }*/
   timer.setInterval(1000, updateTEM);
 }
 
