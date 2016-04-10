@@ -1,5 +1,5 @@
 /*  This is the DAQ system for MIT Motorsports.
- *  Questions: Contact Ben Claman, Laura Gustafson, or Justin Carus
+ *  Questions: Contact Ben Claman, Laura Gustafson, or Justin Carrus
  */
 
 
@@ -17,41 +17,34 @@
  *   - Rx - 2
  *  
  *  GPS
- *   - 
- *   - 
- *   - ;
- *   - 
+ *   - RX0 - 5
+ *   - TX0 - 6
  *   - 
  *   
  *  IMU
  *   - A4 (SDA) - SDA
  *   - A5 (SCL) - SCL
- *   - 5 - CS
- *   
- *  RTC
- *   - 
- *   - 
- *  
- *  SDC
- *   - 13 (SCK) - SCK
- *   - 12 (MISO) - MISO
- *   - 11 (MOSI) - MOSI
- *   - 10 - CS
  *   
  *  TEM
  *   - 3 - Sense Line
  */
 
-// General
-#include "SimpleTimer.h"
+/////////////
+// General //
+/////////////
+#include "./SimpleTimer.h"
+#include <SoftwareSerial.h>
 SimpleTimer timer;
+SoftwareSerial XBee(5, 6);
 
 void setup(){
-  Serial.begin(9600);
-  //setupRTC();
-  //setupSDC();
+	XBee.begin(9600);
+	
+	//XBee.begin(115200);
   setupTEM();
   //setupGPS();
+  setupIMU();
+  setupCAN();
 }
 
 void loop(){
@@ -59,26 +52,45 @@ void loop(){
 }
 
 unsigned long s;
-unsigned long start;
 bool log(String key, String val){
   s = millis();
   String d = String(s) + ',' + key + ',' + val;
-  Serial.println(d);
-  //writeSDC(d);
+  XBee.println(d);
   return true;
 }
 
-// GPS //////////////////////////////////////////////////////////////////
-/*
+
+/////////
+// CAN //
+/////////
+void setupCAN(){
+	Serial.begin(115200);
+	timer.setInterval(50, canUpdate);
+}
+
+void canUpdate(){
+	if (Serial.available() > 0){
+    XBee.print(millis());
+    XBee.print(',');
+		while(Serial.peek() != '\n'){
+			XBee.print((char) Serial.read());
+		}
+   Serial.read();
+	}
+}
+
+/////////
+// GPS //
+/////////
 #include <SoftwareSerial.h>
-SoftwareSerial gpsSerial(10, 11); // RX, TX (TX not used)
+SoftwareSerial gpsSerial(10, 11);
 const int sentenceSize = 80;
 char sentence[sentenceSize];
 
 void setupGPS()
 {
   gpsSerial.begin(9600);
-  timer.setInterval(500, gpsUpdate);
+  timer.setInterval(50, gpsUpdate);
 }
 
 void gpsUpdate()
@@ -138,32 +150,19 @@ void getField(char* buffer, int index)
   }
   buffer[fieldPos] = '\0';
 }
-*/
 
-// IMU //////////////////////////////////////////////////////////////////
-// The SFE_LSM9DS1 library requires both Wire and SPI be
-// included BEFORE including the 9DS1 library.
+
+/////////
+// IMU //
+/////////
 #include <Wire.h>
-#include <SPI.h>/*
-#include "SparkFunLSM9DS1.h"
-
-//////////////////////////
-// LSM9DS1 Library Init //
-//////////////////////////
-// Use the LSM9DS1 class to create an object. [imu] can be
-// named anything, we'll refer to that throught the sketch.
+#include <SPI.h>
+#include "./SparkFunLSM9DS1.h"
 LSM9DS1 imu;
-
-///////////////////////
-// Example I2C Setup //
-///////////////////////
-// SDO_XM and SDO_G are both pulled high, so our addresses are:
 #define LSM9DS1_M  0x1E // Would be 0x1C if SDO_M is LOW
 #define LSM9DS1_AG  0x6B // Would be 0x6A if SDO_AG is LOW
 
-////////////////////////////
 // Sketch Output Settings //
-////////////////////////////
 #define PRINT_CALCULATED
 //#define PRINT_RAW
 
@@ -173,7 +172,7 @@ LSM9DS1 imu;
 // http://www.ngdc.noaa.gov/geomag-web/#declination
 #define DECLINATION -8.58 // Declination (degrees) in Boulder, CO.
 
-void imuSetup() 
+void setupIMU() 
 {
   // Before initializing the IMU, there are a few settings
   // we may need to adjust. Use the settings struct to set
@@ -181,9 +180,105 @@ void imuSetup()
   imu.settings.device.commInterface = IMU_MODE_I2C;
   imu.settings.device.mAddress = LSM9DS1_M;
   imu.settings.device.agAddress = LSM9DS1_AG;
-  // The above lines will only take effect AFTER calling
-  // imu.begin(), which verifies communication with the IMU
-  // and turns it on.
+
+  // [enabled] turns the acclerometer on or off.
+  imu.settings.accel.enabled = true; // Enable accelerometer
+  // [enableX], [enableY], and [enableZ] can turn on or off
+  // select axes of the acclerometer.
+  imu.settings.accel.enableX = true; // Enable X
+  imu.settings.accel.enableY = true; // Enable Y
+  imu.settings.accel.enableZ = true; // Enable Z
+  // [scale] sets the full-scale range of the accelerometer.
+  // accel scale can be 2, 4, 8, or 16
+  imu.settings.accel.scale = 2; // Set accel scale to +/-8g.
+  // [sampleRate] sets the output data rate (ODR) of the
+  // accelerometer. ONLY APPLICABLE WHEN THE GYROSCOPE IS
+  // DISABLED! Otherwise accel sample rate = gyro sample rate.
+  // accel sample rate can be 1-6
+  // 1 = 10 Hz    4 = 238 Hz
+  // 2 = 50 Hz    5 = 476 Hz
+  // 3 = 119 Hz   6 = 952 Hz
+  imu.settings.accel.sampleRate = 2; // Set accel to 10Hz.
+  // [bandwidth] sets the anti-aliasing filter bandwidth.
+  // Accel cutoff freqeuncy can be any value between -1 - 3. 
+  // -1 = bandwidth determined by sample rate
+  // 0 = 408 Hz   2 = 105 Hz
+  // 1 = 211 Hz   3 = 50 Hz
+  imu.settings.accel.bandwidth = -1; // BW = 408Hz
+  // [highResEnable] enables or disables high resolution 
+  // mode for the acclerometer.
+  imu.settings.accel.highResEnable = false; // Disable HR
+  // [highResBandwidth] sets the LP cutoff frequency of
+  // the accelerometer if it's in high-res mode.
+  // can be any value between 0-3
+  // LP cutoff is set to a factor of sample rate
+  // 0 = ODR/50    2 = ODR/9
+  // 1 = ODR/100   3 = ODR/400
+  imu.settings.accel.highResBandwidth = 0;  
+
+  // [enabled] turns the magnetometer on or off.
+  imu.settings.mag.enabled = true; // Enable magnetometer
+  // [scale] sets the full-scale range of the magnetometer
+  // mag scale can be 4, 8, 12, or 16
+  imu.settings.mag.scale = 12; // Set mag scale to +/-12 Gs
+  // [sampleRate] sets the output data rate (ODR) of the
+  // magnetometer.
+  // mag data rate can be 0-7:
+  // 0 = 0.625 Hz  4 = 10 Hz
+  // 1 = 1.25 Hz   5 = 20 Hz
+  // 2 = 2.5 Hz    6 = 40 Hz
+  // 3 = 5 Hz      7 = 80 Hz
+  imu.settings.mag.sampleRate = 5; // Set OD rate to 20Hz
+  // [tempCompensationEnable] enables or disables 
+  // temperature compensation of the magnetometer.
+  imu.settings.mag.tempCompensationEnable = false;
+  // [XYPerformance] sets the x and y-axis performance of the
+  // magnetometer to either:
+  // 0 = Low power mode      2 = high performance
+  // 1 = medium performance  3 = ultra-high performance
+  imu.settings.mag.XYPerformance = 3; // Ultra-high perform.
+  // [ZPerformance] does the same thing, but only for the z
+  imu.settings.mag.ZPerformance = 3; // Ultra-high perform.
+  // [lowPowerEnable] enables or disables low power mode in
+  // the magnetometer.
+  imu.settings.mag.lowPowerEnable = false;
+  // [operatingMode] sets the operating mode of the
+  // magnetometer. operatingMode can be 0-2:
+  // 0 = continuous conversion
+  // 1 = single-conversion
+  // 2 = power down
+  imu.settings.mag.operatingMode = 0; // Continuous mode
+
+  // [enabled] turns the gyro on or off.
+  imu.settings.gyro.enabled = true;  // Enable the gyro
+  // [scale] sets the full-scale range of the gyroscope.
+  // scale can be set to either 245, 500, or 2000
+  imu.settings.gyro.scale = 245; // Set scale to +/-245dps
+  // [sampleRate] sets the output data rate (ODR) of the gyro
+  // sampleRate can be set between 1-6
+  // 1 = 14.9    4 = 238
+  // 2 = 59.5    5 = 476
+  // 3 = 119     6 = 952
+  imu.settings.gyro.sampleRate = 3; // 59.5Hz ODR
+  // [bandwidth] can set the cutoff frequency of the gyro.
+  // Allowed values: 0-3. Actual value of cutoff frequency
+  // depends on the sample rate. (Datasheet section 7.12)
+  imu.settings.gyro.bandwidth = 0;
+  // [lowPowerEnable] turns low-power mode on or off.
+  imu.settings.gyro.lowPowerEnable = false; // LP mode off
+  // [HPFEnable] enables or disables the high-pass filter
+  imu.settings.gyro.HPFEnable = true; // HPF disabled
+  // [HPFCutoff] sets the HPF cutoff frequency (if enabled)
+  // Allowable values are 0-9. Value depends on ODR.
+  // (Datasheet section 7.14)
+  imu.settings.gyro.HPFCutoff = 1; // HPF cutoff = 4Hz
+  // [flipX], [flipY], and [flipZ] are booleans that can
+  // automatically switch the positive/negative orientation
+  // of the three gyro axes.
+  imu.settings.gyro.flipX = false; // Don't flip X
+  imu.settings.gyro.flipY = false; // Don't flip Y
+  imu.settings.gyro.flipZ = false; // Don't flip Z
+  
   if (!imu.begin())
   {
     log("err", "Failed to communicate with LSM9DS1.");
@@ -193,24 +288,21 @@ void imuSetup()
                   "Breakout, but may need to be modified " \
                   "if the board jumpers are.");
   } else {
+		imu.calibrate();
+		imu.calibrateMag();
     timer.setInterval(20, updateIMU);
   }
 }
 
 void updateIMU()
 {
-  //printGyro();  // Print "G: gx, gy, gz"
-  printAccel(); // Print "A: ax, ay, az"
-  //printMag();   // Print "M: mx, my, mz"
-  
-  // Print the heading and orientation for fun!
-  // Call print attitude. The LSM9DS1's magnetometer x and y
-  // axes are opposite to the accelerometer, so my and mx are
-  // substituted for each other.
-  //printAttitude(imu.ax, imu.ay, imu.az, -imu.my, -imu.mx, imu.mz);
-  //Serial.println();
-  
-  //delay(PRINT_SPEED);
+
+  imu.readGyro();
+  log("gyr", (String(imu.gx) + ' ' + imu.gy + ' ' + imu.gz));
+  imu.readAccel();
+  log("acc", (String(imu.ax) + ' ' + imu.ay + ' ' + imu.az));
+  imu.readMag();
+  log("mag", (String(imu.mx) + ' ' + imu.my + ' ' + imu.mz));
 }
 
 void printGyro()
@@ -341,97 +433,13 @@ float ax, float ay, float az, float mx, float my, float mz)
   Serial.println(roll, 2);
   Serial.print("Heading: "); Serial.println(heading, 2);
 }
-*/
-
-// RTC //////////////////////////////////////////////////////////////////
-
-/*
-// Date and time functions using a DS1307 RTC connected via I2C and Wire lib
-#include <Wire.h>
-#include "RTClib.h"
-
-#if defined(ARDUINO_ARCH_SAMD)
-// for Zero, output on USB Serial console, remove line below if using programming port to program the Zero!
-   #define Serial SerialUSB
-#endif
-
-RTC_DS1307 rtc;
-DateTime starttime = new DateTime(0);
-
-char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
-
-void setupRTC() {
-  if (! rtc.begin()) {
-    log("err","Couldn't find RTC");
-  }
-
-  if (rtc.isrunning()) {
-    starttime = rtc.now();
-    start = starttime.unixtime();
-  } else{
-    log("wrn", "RTC is NOT running!");
-    // following line sets the RTC to the date & time this sketch was compiled
-    rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-    // This line sets the RTC with an explicit date & time, for example to set
-    // January 21, 2014 at 3am you would call:
-    // rtc.adjust(DateTime(2014, 1, 21, 3, 0, 0));
-    start = 0;
-    
-  }
-}
-*/
-/*
-// EEPROM workaround
-
-#include <EEPROM.h>
-#define EEPROMADDR 0
-int filenum = 0;
-
-// SDC //////////////////////////////////////////////////////////////////
-#include <SPI.h>
-#include <SD.h>
-
-#define chipSelect 10
-File dataFile;
-void setupSDC()
-{
 
 
-filenum = EEPROM.read(EEPROMADDR);
-filenum = (filenum + 1) % 256;
-String filename = String(filenum) + ".csv";
-Serial.println("Recording to " + filename);
-EEPROM.write(EEPROMADDR, filenum);
-
-
-
-  
-  if (!SD.begin(chipSelect)) {
-    log("err", "Card failed, or not present");
-  }
-                                 
-  dataFile = SD.open(filename, FILE_WRITE);
-  Serial.println("Output to " + filename);
-}
-
-void writeSDC(String str)
-{
-  // open the file. note that only one file can be open at a time,
-  // so you have to close this one before opening another.
-  if (dataFile) {
-    dataFile.println(str);
-    dataFile.flush();
-  }
-  // if the file isn't open, pop up an error:
-  else {
-    log("err", "error writing to file");
-  }
-}
-
-*/
-// TEM //////////////////////////////////////////////////////////////////
-#include "OneWire.h"
-#include "DallasTemperature.h"
+/////////
+// TEM //
+/////////
+#include "./OneWire.h"
+#include "./DallasTemperature.h"
 
 // Data wire is plugged into pin 3 on the Arduino
 #define ONE_WIRE_BUS 3
@@ -442,26 +450,48 @@ OneWire oneWire(ONE_WIRE_BUS);
 // Pass our oneWire reference to Dallas Temperature.
 DallasTemperature sensors(&oneWire);
 
-DeviceAddress addrs[8];
+//DeviceAddress addrs[8];
 
-DeviceAddress T1 = {0x28, 0x1F, 0x58, 0x29, 0x07, 0x00, 0x00, 0x53};
+//DeviceAddress T1 = {0x28, 0x1F, 0x58, 0x29, 0x07, 0x00, 0x00, 0x53};
+
+
+float T1C;
+float T2C;
+float T3C;
+float T4C;
+DeviceAddress T1 = { 0x28, 0x90, 0xAB, 0x29, 0x07, 0x00, 0x00, 0x75 };
+DeviceAddress T2 = { 0x28, 0x32, 0x28, 0x29, 0x07, 0x00, 0x00, 0xC2 };
+DeviceAddress T3 = { 0x28, 0x0E, 0xF4, 0x29, 0x07, 0x00, 0x00, 0x2D };
+DeviceAddress T4 = { 0x28, 0xCB, 0x6A, 0x29, 0x07, 0x00, 0x00, 0x4C };
  
 // Records all temperatures. The function takes about 835 milliseconds to run.
 void updateTEM(){
-  sensors.requestTemperatures();
   String dataString;
-  log("tem",String(sensors.getTempC(T1)));
+  T1C = sensors.getTempC(T1);
+  T2C = sensors.getTempC(T2);
+  T3C = sensors.getTempC(T3);
+  T4C = sensors.getTempC(T4);
+  dataString = String(T1C) + String(' ') + 
+               String(T2C) + String(' ') + 
+               String(T3C) + String(' ') + 
+               String(T4C);
   /*
   for(int i = 0; i < sensors.getDeviceCount(); i++){
     dataString += sensors.getTempC(addrs[i]) + ',';
-  }
-  log("tem", dataString);*/
+  }*/
+  log("tem", dataString);
+  sensors.requestTemperatures();
 }
 
 void setupTEM() {  
 
   // Start up the library
   sensors.begin();
+  sensors.setResolution(T1, 12);
+  sensors.setResolution(T2, 12);
+  sensors.setResolution(T3, 12);
+  sensors.setResolution(T4, 12);
+  sensors.setWaitForConversion(false);
   /*
   int numDevices = sensors.getDeviceCount();
   log("nfo",String("found ") + numDevices + " temperature sensors");
@@ -472,6 +502,7 @@ void setupTEM() {
     sensors.setResolution(addr, 12);
     i++;
   }*/
+  sensors.requestTemperatures();
   timer.setInterval(1000, updateTEM);
 }
 
